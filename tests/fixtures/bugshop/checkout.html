@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Bug Shop - Checkout</title></head>
+<body>
+  <h1>Checkout: your information</h1>
+  <input data-test="firstName" placeholder="First Name">
+  <!-- Planted bug 3: the last name field drops what is typed. -->
+  <input data-test="lastName" placeholder="Last Name" oninput="this.value = ''">
+  <!-- Planted bug 4: Continue logs an error and never reaches the next step. -->
+  <button data-test="continue" onclick="console.error('checkout failed: missing customer id')">
+    Continue
+  </button>
+</body>
+</html>

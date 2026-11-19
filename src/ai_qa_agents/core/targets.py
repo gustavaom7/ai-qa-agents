@@ -20,6 +20,10 @@ class KnownBug(BaseModel):
     id: str
     description: str
     trigger: str = ""  # e.g. "login as problem_user"
+    # How an agent's finding is matched to this bug when measuring recall:
+    # same test user and same kind of deterministic check ("signal").
+    user: str = ""
+    signal: str = ""
 
 
 class Target(BaseModel):

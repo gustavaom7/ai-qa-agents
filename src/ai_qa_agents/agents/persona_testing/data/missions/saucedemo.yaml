@@ -1,0 +1,38 @@
+# Each mission pairs a persona with a test user and a goal. The users with
+# deliberate bugs cover the answer key in targets/saucedemo.yaml;
+# standard_user is the control run: any finding there is likely a false positive.
+- id: sort-and-buy
+  persona: power_user
+  user: problem_user
+  goal: >-
+    Sort the products by price from low to high, add the two cheapest products
+    to the cart and complete the checkout.
+
+- id: browse-and-buy
+  persona: first_timer
+  user: problem_user
+  goal: >-
+    Look at the product list, open the details of one product, add it to the
+    cart and complete the checkout with your name and a postal code.
+
+- id: quick-purchase
+  persona: in_a_hurry
+  user: error_user
+  goal: Buy any one product and finish the checkout as fast as possible.
+
+- id: slow-login
+  persona: slow_network
+  user: performance_glitch_user
+  goal: Log in and add the Sauce Labs Backpack to the cart.
+
+- id: keyboard-purchase
+  persona: keyboard_only
+  user: standard_user
+  goal: Buy the Sauce Labs Bike Light using only the keyboard.
+
+- id: control-purchase
+  persona: first_timer
+  user: standard_user
+  goal: >-
+    Add the Sauce Labs Backpack and the Sauce Labs Onesie to the cart and
+    complete the checkout.

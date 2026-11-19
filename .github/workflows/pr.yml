@@ -15,10 +15,12 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     env:
       # Pull requests never call an LLM: recorded answers only.
       LLM_MODE: replay
+      # Browser tests run on local fixture pages; CI must record video too.
+      EXPECT_VIDEO: "1"
     steps:
       - uses: actions/checkout@v4
 
@@ -29,6 +31,9 @@ jobs:
 
       - name: Install
         run: uv sync --locked
+
+      - name: Install Chromium and ffmpeg
+        run: uv run playwright install --with-deps chromium ffmpeg
 
       - name: Lint
         run: uv run ruff check . --output-format github

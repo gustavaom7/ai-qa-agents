@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Bug Shop</title></head>
+<body>
+  <!-- Local test shop with planted bugs, used by the persona_testing e2e test. -->
+  <h1>Bug Shop</h1>
+  <form id="login" onsubmit="event.preventDefault(); location.href = 'inventory.html';">
+    <input data-test="username" placeholder="Username">
+    <input data-test="password" type="password" placeholder="Password">
+    <button data-test="login-button" type="submit">Login</button>
+  </form>
+</body>
+</html>

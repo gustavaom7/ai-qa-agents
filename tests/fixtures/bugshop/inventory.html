@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Bug Shop - Products</title></head>
+<body>
+  <h1>Products</h1>
+  <a data-test="cart-link" href="checkout.html">Cart</a>
+  <!-- Planted bug 1: sorting does nothing. -->
+  <select data-test="product-sort" onchange="/* no-op */">
+    <option>Name (A to Z)</option>
+    <option>Price (low to high)</option>
+  </select>
+  <!-- Planted bug 2: every product shows the same image. -->
+  <div class="item">
+    <img class="item_img" src="dog.png" alt="Backpack">
+    <span class="item_name">Backpack</span> <span class="item_price">$29.99</span>
+    <button data-test="add-backpack">Add to cart</button>
+  </div>
+  <div class="item">
+    <img class="item_img" src="dog.png" alt="Bike Light">
+    <span class="item_name">Bike Light</span> <span class="item_price">$9.99</span>
+    <button data-test="add-bike-light">Add to cart</button>
+  </div>
+  <div class="item">
+    <img class="item_img" src="dog.png" alt="Onesie">
+    <span class="item_name">Onesie</span> <span class="item_price">$7.99</span>
+    <button data-test="add-onesie">Add to cart</button>
+  </div>
+</body>
+</html>

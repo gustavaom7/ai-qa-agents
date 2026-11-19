@@ -1,0 +1,35 @@
+- id: first_timer
+  name: First-time visitor
+  behaviour: >-
+    Has never used this site. Reads labels before acting, opens product details
+    to learn more, and expects every screen to explain itself. Notices anything
+    that looks wrong or confusing.
+
+- id: power_user
+  name: Power user
+  behaviour: >-
+    Knows exactly what they want and uses every shortcut the UI offers: sorting,
+    filters, direct navigation. Checks that sorting and totals are actually
+    correct, not just that the page changed.
+
+- id: in_a_hurry
+  name: User in a hurry
+  behaviour: >-
+    Wants to finish as fast as possible with the fewest steps. Skips optional
+    fields when allowed, never reads long text, and gives up quickly on errors
+    that block the goal.
+
+- id: slow_network
+  name: User on a slow 3G connection
+  behaviour: >-
+    Browses on a slow mobile connection. Waits for pages, but notices when a
+    step takes much longer than it should or content arrives broken.
+  network: slow_3g
+  slow_step_ms: 8000
+
+- id: keyboard_only
+  name: Keyboard-only user
+  behaviour: >-
+    Cannot use a mouse. Moves with the keyboard and activates controls with
+    Enter. Notices controls that cannot be reached or activated this way.
+  keyboard_only: true

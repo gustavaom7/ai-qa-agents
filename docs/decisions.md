@@ -2,6 +2,20 @@
 
 Short records of choices that shape the repo. Newest first.
 
+## 2026-11-19 — Delivery 2: persona_testing
+
+**The model proposes, code confirms.** A model-reported issue must include a check from a fixed list (`not_sorted`, `attr_all_equal`, ...). Code evaluates it on the live page, then again after a scripted replay in a fresh browser. The model never decides that a bug is real. This is what makes "reproduced" trustworthy and keeps hallucinations out of the findings.
+
+**Own page snapshot instead of Playwright MCP.** A small script (`observe.js`) lists interactive elements with replayable CSS selectors (data-test, id, name, then a structural path). The model answers with a ref (`e7`); the step stores the selector, so the replay needs no model. This keeps the agent in Python and makes every step deterministic to re-run.
+
+**Deterministic detectors next to the model.** Console errors and slow steps are flagged by code, with no tokens spent.
+
+**Coarse timings in the prompt.** Steps are described as "fast", "1-3 s" or "slow" instead of exact milliseconds, so the same run produces the same prompts and recorded answers replay.
+
+**A local bug shop for tests.** `tests/fixtures/bugshop/` has four planted bugs. The end-to-end test drives a real browser over `file://` pages with a scripted model: no network, no keys, and the whole loop (explore, live check, replay, evidence, recall) is covered.
+
+**Recall from an answer key.** Known bugs carry the test user and the check kind that should catch them, so recall is computed, not estimated.
+
 ## 2026-11-19 — Delivery 1: the core
 
 **Python, not TypeScript.** Same language as `llm-eval-qa`; pytest drives both the agents and their tests. Playwright for Python covers the browser work.

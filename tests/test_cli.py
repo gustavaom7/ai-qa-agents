@@ -20,7 +20,7 @@ def test_list_shows_targets(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["list"]) == 0
     out = capsys.readouterr().out
     assert "saucedemo" in out
-    assert "(none yet)" in out
+    assert "persona_testing" in out
 
 
 def test_doctor_fails_without_any_provider(

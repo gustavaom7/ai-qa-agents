@@ -1,7 +1,7 @@
 """Agent registry.
 
 Each agent module registers a ``run(target, client, out_dir) -> list[Finding]``
-function here. Delivery 1 ships the core only, so the registry is empty.
+function here. Agents register on import, at the bottom of this module.
 """
 
 from __future__ import annotations
@@ -25,3 +25,7 @@ def register(name: str) -> Callable[[AgentFn], AgentFn]:
         return fn
 
     return wrap
+
+
+# Import agents last so they can use ``register`` above.
+from ai_qa_agents.agents import persona_testing  # noqa: E402, F401

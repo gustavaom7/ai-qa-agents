@@ -11,6 +11,7 @@ uv run agent list | doctor | ping | run <agent> <target>
 ```
 
 All four checks must pass before a commit. CI runs them with `LLM_MODE=replay`.
+Browser tests need Chromium: `uv run playwright install chromium ffmpeg`, or `PW_CHANNEL=chrome` to use an installed Chrome.
 
 ## Rules
 

@@ -6,13 +6,13 @@ Autonomous QA agents that run every night against public demo apps and report fi
 
 Everything runs at **$0**: LLMs on free tiers or local, Android emulators on GitHub Actions.
 
-> **Status: delivery 1 of 9, the core.** The LLM client, recorded answers, the finding schema, the targets and CI are in place. No agent ships yet. See the [roadmap](#roadmap).
+> **Status: delivery 2 of 9.** The core and the first agent, `persona_testing`, are in place and verified end to end on a local shop with planted bugs. The first live saucedemo run is next. See the [roadmap](#roadmap) and [persona_testing findings](findings/persona_testing.md).
 
-## Agents (planned)
+## Agents
 
 | Agent | What it reports | Target |
 |---|---|---|
-| `persona_testing` | Simulated users (first-timer, power user, slow 3G, keyboard-only) pursue a goal; a stuck run becomes a bug with steps and video, **only if a scripted replay fails the same way** | saucedemo |
+| `persona_testing` ✅ | Simulated users (first-timer, power user, slow 3G, keyboard-only) pursue a goal; a stuck run becomes a bug with steps and video, **only if a scripted replay fails the same way** | saucedemo |
 | `worst_case_data` | 5,000-char text, emoji, RTL, zero and 10,000 items; overflow, clipping, console errors | TodoMVC, saucedemo |
 | `copy_drift` | "Sign in" vs "Log in": every variant, where it appears, a suggested standard | both web targets |
 | `design_tokens` | Colors, font sizes and spacing outside `tokens.json`, with a highlighted screenshot | saucedemo |
@@ -29,8 +29,13 @@ uv sync
 cp .env.example .env          # add a free GEMINI_API_KEY and/or GROQ_API_KEY
 uv run agent doctor           # which providers are ready
 uv run agent list             # agents and targets
+uv run playwright install chromium ffmpeg
 uv run pytest                 # offline, no keys needed
+uv run agent run persona_testing saucedemo                  # live run, needs a key
+PERSONA_MISSIONS=sort-and-buy uv run agent run persona_testing saucedemo   # one mission
 ```
+
+Results land in `runs/persona_testing/saucedemo/`: `summary.md`, `findings.json`, and per finding a video, a Playwright trace (`uv run playwright show-trace <file>`) and a screenshot.
 
 ## How the LLM layer works
 
@@ -70,20 +75,21 @@ src/ai_qa_agents/
 │   ├── llm/          # client, providers, cassettes, usage log
 │   ├── finding.py    # finding schema, dedupe, precision
 │   └── targets.py    # target schema and loader
-├── agents/           # one package per agent (from delivery 2)
+├── agents/
+│   └── persona_testing/  # personas, missions, driver, checks, replay
 └── cli.py            # `uv run agent ...`
 targets/              # public demo apps, one YAML each
 cassettes/            # recorded LLM answers, committed
 findings/             # reviewed findings per agent, committed
-tests/                # offline pytest suite
+tests/                # offline pytest suite; fixtures/bugshop is a local shop with planted bugs
 ```
 
 ## Roadmap
 
 | # | Delivery | Done when |
 |---|---|---|
-| 1 | **Core and green CI** ✅ | CI passes; the client falls back Gemini → Groq → Ollama; cassette replay works in tests |
-| 2 | Persona testing on saucedemo | Finds 3+ known bugs of `problem_user` / `error_user`, each replay-confirmed with video |
+| 1 | Core and green CI ✅ | CI passes; the client falls back Gemini → Groq → Ollama; cassette replay works in tests |
+| 2 | **Persona testing** ✅ code, live run pending | Finds 3+ known bugs of `problem_user` / `error_user`, each replay-confirmed with video |
 | 3 | HTML report on GitHub Pages | Nightly publishes the page with the persona findings |
 | 4 | Worst-case data | Every break has a screenshot and the data that caused it |
 | 5 | Copy drift | Inconsistent-term table for both web targets |

@@ -51,6 +51,8 @@ class Finding(BaseModel):
     reproduced: bool = False  # set by a deterministic replay, never by the LLM
     status: ReviewStatus = ReviewStatus.DRAFT
     review_note: str = ""
+    # Agent-specific labels (persona, test user, check kind...). Not part of the fingerprint.
+    tags: dict[str, str] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     @computed_field  # type: ignore[prop-decorator]

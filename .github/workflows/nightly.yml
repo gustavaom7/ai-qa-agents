@@ -1,0 +1,73 @@
+name: Nightly agents
+
+# Live runs against the public targets with free-tier LLMs.
+# Results (summary, findings, evidence, new cassettes) are uploaded as an
+# artifact for review. Publishing a report and opening a review PR come in
+# delivery 3.
+on:
+  schedule:
+    - cron: "17 6 * * *"  # 03:17 BRT
+  workflow_dispatch:
+    inputs:
+      missions:
+        description: "persona_testing mission ids, comma-separated (empty = all)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  persona-testing:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      LLM_PROVIDERS: gemini,groq
+      LLM_MODE: auto
+      PERSONA_MISSIONS: ${{ inputs.missions }}
+    steps:
+      - name: Skip without keys
+        id: keys
+        run: |
+          if [ -z "$GEMINI_API_KEY$GROQ_API_KEY" ]; then
+            echo "::notice::No GEMINI_API_KEY or GROQ_API_KEY secret; skipping the live run."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.keys.outputs.ready == 'true'
+
+      - uses: astral-sh/setup-uv@v6
+        if: steps.keys.outputs.ready == 'true'
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Install
+        if: steps.keys.outputs.ready == 'true'
+        run: |
+          uv sync --locked
+          uv run playwright install --with-deps chromium ffmpeg
+
+      - name: Run persona_testing on saucedemo
+        if: steps.keys.outputs.ready == 'true'
+        run: uv run agent run persona_testing saucedemo
+
+      - name: Usage
+        if: always() && steps.keys.outputs.ready == 'true'
+        run: |
+          uv run python -c "from pathlib import Path; from ai_qa_agents.core.llm import UsageLog; import json; print(json.dumps(UsageLog(Path('runs/usage.jsonl')).summary(), indent=2))"
+          cat runs/persona_testing/saucedemo/summary.md >> "$GITHUB_STEP_SUMMARY" || true
+
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.keys.outputs.ready == 'true'
+        with:
+          name: persona-testing-${{ github.run_id }}
+          path: |
+            runs/
+            cassettes/
+          retention-days: 14
