@@ -2,6 +2,16 @@
 
 Short records of choices that shape the repo. Newest first.
 
+## 2026-11-19 — Delivery 3: report and review
+
+**The record is a file, the review is a PR.** `findings/<agent>.json` is committed and is the source of truth. Each nightly run is merged into it by fingerprint: known findings keep their review and get fresh evidence, new ones arrive as drafts, nothing is removed. The nightly opens a PR; reviewing means setting each status with `agent review` and merging. No database, full history in git.
+
+**One self-contained page.** The report is a single HTML file with inline CSS and a small theme script, plus copied evidence. It makes no external request, so it opens offline and from an artifact. It follows the Terminal Dashboard look of my other QA reports: flat, dark by default with a light theme, colour only for status and always with a text label, rates in blue.
+
+**Demo runs are labelled and kept apart.** The bug-shop demo shows the pipeline on the public page before any live run, but it is marked "Demo · local fixture, scripted model", excluded from totals, and `collect` never merges it.
+
+**Detector fix found by the demo.** Serving the bug shop over local HTTP produced a favicon 404 on the first page. The console-error detector fired once, on that noise, and the replay correctly dropped it, but the real checkout error later never became a candidate. The detector now creates one candidate per distinct message, matches that message on replay and ignores favicon noise. The e2e test runs over both `file://` and local HTTP to keep this covered.
+
 ## 2026-11-19 — Delivery 2: persona_testing
 
 **The model proposes, code confirms.** A model-reported issue must include a check from a fixed list (`not_sorted`, `attr_all_equal`, ...). Code evaluates it on the live page, then again after a scripted replay in a fresh browser. The model never decides that a bug is real. This is what makes "reproduced" trustworthy and keeps hallucinations out of the findings.

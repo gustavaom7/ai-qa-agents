@@ -89,11 +89,15 @@ SCRIPT = [
 ]
 
 
-def test_full_loop_on_bugshop(browser: Browser, tmp_path: Path) -> None:
+@pytest.mark.parametrize("transport", ["file", "http"])
+def test_full_loop_on_bugshop(
+    browser: Browser, tmp_path: Path, bugshop_url: str, transport: str
+) -> None:
+    target = TARGET if transport == "file" else TARGET.model_copy(update={"base_url": bugshop_url})
     client, provider = scripted_client(SCRIPT)
     mission = Mission(id="buy", persona="power_user", user="bug_user", goal="Buy something")
     findings, runs = run_missions(
-        [mission], load_personas(), TARGET, client, browser, tmp_path, root=tmp_path
+        [mission], load_personas(), target, client, browser, tmp_path, root=tmp_path
     )
 
     run = runs[0]

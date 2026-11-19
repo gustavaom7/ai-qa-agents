@@ -1,12 +1,16 @@
 name: Nightly agents
 
-# Live runs against the public targets with free-tier LLMs.
-# Results (summary, findings, evidence, new cassettes) are uploaded as an
-# artifact for review. Publishing a report and opening a review PR come in
-# delivery 3.
+# 1. agents  — live runs with free-tier LLMs (skipped without keys), then a
+#              review PR with the new findings and recorded answers.
+# 2. demo    — persona_testing on the local bug shop with a scripted model,
+#              so the published report always shows the pipeline working.
+# 3. report  — builds the HTML report and publishes it to GitHub Pages.
 on:
   schedule:
     - cron: "17 6 * * *"  # 03:17 BRT
+  push:
+    branches: [main]
+    paths: ["findings/**"]  # a merged review republishes the report
   workflow_dispatch:
     inputs:
       missions:
@@ -17,10 +21,20 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
 jobs:
-  persona-testing:
+  agents:
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      ran: ${{ steps.keys.outputs.ready }}
     env:
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
@@ -57,17 +71,121 @@ jobs:
         if: steps.keys.outputs.ready == 'true'
         run: uv run agent run persona_testing saucedemo
 
-      - name: Usage
-        if: always() && steps.keys.outputs.ready == 'true'
+      - name: Merge findings into the record
+        if: steps.keys.outputs.ready == 'true'
         run: |
-          uv run python -c "from pathlib import Path; from ai_qa_agents.core.llm import UsageLog; import json; print(json.dumps(UsageLog(Path('runs/usage.jsonl')).summary(), indent=2))"
-          cat runs/persona_testing/saucedemo/summary.md >> "$GITHUB_STEP_SUMMARY" || true
+          uv run agent collect persona_testing --summary review.md
+          cat review.md >> "$GITHUB_STEP_SUMMARY"
+          cat runs/persona_testing/saucedemo/summary.md >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
         if: always() && steps.keys.outputs.ready == 'true'
         with:
-          name: persona-testing-${{ github.run_id }}
+          name: agents-run
+          # Two paths keep the runs/ and cassettes/ prefixes inside the artifact.
           path: |
             runs/
             cassettes/
           retention-days: 14
+
+      - name: Open the review PR
+        if: steps.keys.outputs.ready == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: nightly/review
+          delete-branch: true
+          add-paths: |
+            findings/*.json
+            cassettes/**
+          commit-message: "Nightly: new findings and recorded answers"
+          title: "Nightly review: persona_testing findings"
+          body-path: review.md
+
+  demo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Install
+        run: |
+          uv sync --locked
+          uv run playwright install --with-deps chromium ffmpeg
+
+      - name: Demo run on the local bug shop
+        run: uv run python scripts/demo_bugshop.py
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: demo-run
+          path: |
+            runs/
+            findings/persona_testing.md
+          retention-days: 14
+
+  report:
+    needs: [agents, demo]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - run: uv sync --locked
+
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: demo-run
+          path: .
+
+      - uses: actions/download-artifact@v4
+        if: needs.agents.outputs.ran == 'true'
+        continue-on-error: true
+        with:
+          name: agents-run
+          path: .
+
+      - name: Build the report
+        run: |
+          if [ "${{ needs.agents.outputs.ran }}" = "true" ]; then
+            uv run agent collect persona_testing  # show new findings before the PR is merged
+          fi
+          uv run agent report --out site
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: report
+          path: site/
+          retention-days: 14
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site/
+
+      - name: Deploy to GitHub Pages
+        id: deploy
+        # Fails until Pages is enabled with source "GitHub Actions" (Settings -> Pages).
+        continue-on-error: true
+        uses: actions/deploy-pages@v4
+
+      - name: Pages not enabled
+        if: steps.deploy.outcome == 'failure'
+        run: echo "::warning::GitHub Pages deploy failed. Enable Pages with source 'GitHub Actions' in Settings -> Pages. The report is still in the 'report' artifact."

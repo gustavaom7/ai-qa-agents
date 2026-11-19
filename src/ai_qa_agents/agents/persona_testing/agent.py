@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -53,13 +54,13 @@ def explore(
     session = PlaywrightSession(browser, persona)
     notes: list[str] = []
     reported: list[str] = []
-    seen_errors = 0
+    seen_errors: set[str] = set()
     credentials = target.credentials.get(mission.user, "")
     try:
         run.steps.append(session.execute(Step(index=0, type="goto", value=target.base_url)))
         for _ in range(mission.max_steps):
             last = run.steps[-1]
-            seen_errors = _detect(run, persona, session.console_errors(), last, seen_errors)
+            _detect(run, persona, session.console_errors(), last, seen_errors)
             if last.error:
                 notes.append(f"step {last.index} failed: {last.error}")
 
@@ -99,21 +100,33 @@ def explore(
     return run
 
 
+# Browser noise that is not an app bug.
+IGNORED_ERRORS = ("favicon.ico",)
+
+
 def _detect(
-    run: MissionRun, persona: Persona, errors: list[str], last: Step, seen_errors: int
-) -> int:
-    """Deterministic detectors that need no model. Returns errors seen so far."""
-    if len(errors) > seen_errors and seen_errors == 0:
+    run: MissionRun, persona: Persona, errors: list[str], last: Step, seen: set[str]
+) -> None:
+    """Deterministic detectors that need no model.
+
+    One candidate per new distinct console error (matched by message on replay),
+    and one per step slower than the persona's limit.
+    """
+    for message in errors:
+        key = message[:120]
+        if key in seen or any(noise in message for noise in IGNORED_ERRORS):
+            continue
+        seen.add(key)
         run.candidates.append(
             Candidate(
                 "detector",
                 len(run.steps),
                 Issue(
-                    title=f"Console errors on {_path(last.url_after)}",
+                    title=f"Console error on {_path(last.url_after)}: {message[:60]}",
                     severity=Severity.MEDIUM,
                     expected="No errors in the browser console",
-                    actual=errors[0][:200],
-                    check=Check(kind="console_error"),
+                    actual=message[:200],
+                    check=Check(kind="console_error", expected=key),
                 ),
             )
         )
@@ -131,7 +144,6 @@ def _detect(
                 ),
             )
         )
-    return len(errors)
 
 
 # -- replaying ---------------------------------------------------------------
@@ -246,9 +258,11 @@ def write_summary(
     findings: list[Finding],
     unconfirmed: list[dict[str, object]],
     rec: dict[str, object],
+    meta: dict[str, object] | None = None,
 ) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     data = {
+        "meta": meta or {},
         "missions": [
             {
                 "id": r.mission.id,
@@ -295,8 +309,14 @@ def run_missions(
     browser: Browser,
     out_dir: Path,
     root: Path | None = None,
+    demo: bool = False,
 ) -> tuple[list[Finding], list[MissionRun]]:
+    """Run each mission, replay its candidates, write summary.json/summary.md.
+
+    ``demo`` marks runs on fixtures with a scripted model, so the report labels them.
+    """
     root = root or out_dir
+    started = datetime.now(UTC)
     findings: list[Finding] = []
     runs: list[MissionRun] = []
     unconfirmed: list[dict[str, object]] = []
@@ -320,5 +340,13 @@ def run_missions(
                     }
                 )
     rec = recall(findings, target, {m.user for m in missions})
-    write_summary(out_dir, runs, findings, unconfirmed, rec)
+    meta: dict[str, object] = {
+        "agent": AGENT,
+        "target": target.name,
+        "started_at": started.isoformat(timespec="seconds"),
+        "finished_at": datetime.now(UTC).isoformat(timespec="seconds"),
+        "providers": [p.name for p in client.providers],
+        "demo": demo,
+    }
+    write_summary(out_dir, runs, findings, unconfirmed, rec, meta)
     return findings, runs

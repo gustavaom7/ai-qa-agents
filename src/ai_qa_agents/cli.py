@@ -8,12 +8,22 @@ uv run agent run <agent> <target>    # run one agent against one target
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
 from ai_qa_agents.agents import REGISTRY
-from ai_qa_agents.core import dedupe, load_targets, save_findings
+from ai_qa_agents.core import (
+    ReviewStatus,
+    dedupe,
+    load_findings,
+    load_targets,
+    merge,
+    save_findings,
+    set_status,
+)
 from ai_qa_agents.core.llm import AllProvidersFailedError, LLMClient, LLMRequest
+from ai_qa_agents.core.report import build_site
 
 
 def _root() -> Path:
@@ -78,6 +88,67 @@ def cmd_run(args: argparse.Namespace) -> int:
     return 0
 
 
+def _is_demo(run_dir: Path) -> bool:
+    summary = run_dir / "summary.json"
+    if not summary.exists():
+        return False
+    meta = json.loads(summary.read_text(encoding="utf-8")).get("meta", {})
+    return bool(meta.get("demo"))
+
+
+def cmd_collect(args: argparse.Namespace) -> int:
+    record = _root() / "findings" / f"{args.agent}.json"
+    existing = load_findings(record)
+    incoming = []
+    for run_findings in sorted((_root() / "runs" / args.agent).glob("*/findings.json")):
+        if _is_demo(run_findings.parent):
+            continue  # fixture runs with a scripted model never enter the record
+        incoming += load_findings(run_findings)
+    result = merge(existing, incoming)
+    save_findings(result.findings, record)
+    lines = [
+        f"## {args.agent}: {len(result.new)} new, {len(result.seen_again)} seen again",
+        "",
+    ]
+    if result.new:
+        lines += ["| Fingerprint | Severity | Title | Mission | User |", "|---|---|---|---|---|"]
+        lines += [
+            f"| `{f.fingerprint}` | {f.severity.value} | {f.title} "
+            f"| {f.tags.get('mission', '')} | {f.tags.get('user', '')} |"
+            for f in result.new
+        ]
+        lines += [
+            "",
+            "Review each with its video/trace in the run artifact, then:",
+            f"`uv run agent review {args.agent} <fingerprint> confirmed|false_positive "
+            '--note "..."`',
+        ]
+    body = "\n".join(lines) + "\n"
+    if args.summary:
+        Path(args.summary).write_text(body, encoding="utf-8")
+    print(body, end="")
+    return 0
+
+
+def cmd_review(args: argparse.Namespace) -> int:
+    record = _root() / "findings" / f"{args.agent}.json"
+    findings = load_findings(record)
+    try:
+        updated = set_status(findings, args.fingerprint, ReviewStatus(args.status), args.note)
+    except KeyError as exc:
+        print(exc.args[0])
+        return 2
+    save_findings(findings, record)
+    print(f"{updated.fingerprint} -> {updated.status.value}: {updated.title}")
+    return 0
+
+
+def cmd_report(args: argparse.Namespace) -> int:
+    index = build_site(_root(), Path(args.out))
+    print(f"report -> {index}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="agent", description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -88,6 +159,19 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("agent")
     run.add_argument("target")
     run.set_defaults(fn=cmd_run)
+    collect = sub.add_parser("collect")
+    collect.add_argument("agent")
+    collect.add_argument("--summary", help="also write the markdown summary to this file")
+    collect.set_defaults(fn=cmd_collect)
+    review = sub.add_parser("review")
+    review.add_argument("agent")
+    review.add_argument("fingerprint", help="full fingerprint or a unique prefix")
+    review.add_argument("status", choices=[s.value for s in ReviewStatus])
+    review.add_argument("--note", default="")
+    review.set_defaults(fn=cmd_review)
+    report = sub.add_parser("report")
+    report.add_argument("--out", default="site")
+    report.set_defaults(fn=cmd_report)
     args = parser.parse_args(argv)
     code: int = args.fn(args)
     return code

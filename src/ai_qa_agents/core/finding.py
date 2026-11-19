@@ -54,6 +54,7 @@ class Finding(BaseModel):
     # Agent-specific labels (persona, test user, check kind...). Not part of the fingerprint.
     tags: dict[str, str] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    last_seen: datetime | None = None  # last run that reproduced it (set by review.merge)
 
     @computed_field  # type: ignore[prop-decorator]
     @property

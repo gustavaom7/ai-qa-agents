@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import functools
 import json
 import os
 import re
+import threading
 from collections.abc import Iterator
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
@@ -73,3 +76,24 @@ def browser() -> Iterator[Browser]:
             pytest.skip(f"no browser available: {str(exc).splitlines()[0]}")
         yield b
         b.close()
+
+
+class _QuietHandler(SimpleHTTPRequestHandler):
+    def log_message(self, format: str, *args: object) -> None:
+        pass
+
+
+def serve(directory: Path, port: int = 0) -> ThreadingHTTPServer:
+    """Serve a fixture folder on 127.0.0.1 (port 0 = any free port)."""
+    handler = functools.partial(_QuietHandler, directory=str(directory))
+    server = ThreadingHTTPServer(("127.0.0.1", port), handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server
+
+
+@pytest.fixture(scope="session")
+def bugshop_url() -> Iterator[str]:
+    """The bug shop over local HTTP: like a real site (favicon 404s included)."""
+    server = serve(FIXTURES / "bugshop")
+    yield f"http://127.0.0.1:{server.server_address[1]}/index.html"
+    server.shutdown()

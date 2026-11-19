@@ -50,7 +50,7 @@ generalize a repeated element to a shared class, e.g. "img.item_img"):
 - visible: selector                    -> an error/unexpected element is visible
 - url_lacks: expected                  -> the URL does not contain the expected part
 - text_lacks: selector, expected       -> the element text does not contain the expected text
-- console_error                        -> the page logged errors
+- console_error: expected (optional)   -> the page logged an error (containing expected)
 - slow_step: ms                        -> the last step took longer than ms
 
 Use "done" when the goal is reached and "give_up" when it is blocked.

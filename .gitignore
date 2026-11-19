@@ -8,3 +8,5 @@ __pycache__/
 runs/
 test-results/
 playwright-report/
+site/
+review.md

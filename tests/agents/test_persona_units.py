@@ -111,6 +111,8 @@ def test_visible_url_text_console() -> None:
     assert evaluate(check(kind="text_lacks", selector=".badge", expected="2"), s, []).confirmed
     assert evaluate(check(kind="console_error"), s, []).confirmed
     assert not evaluate(check(kind="console_error"), FakeSession(), []).bug
+    assert evaluate(check(kind="console_error", expected="bo"), s, []).confirmed
+    assert not evaluate(check(kind="console_error", expected="other"), s, []).bug
 
 
 def test_slow_step_uses_given_or_last_step() -> None:
@@ -259,3 +261,28 @@ def test_recall_ignores_out_of_scope_signals() -> None:
     target = load_targets(ROOT / "targets")["saucedemo"]
     rec = recall([], target, {"visual_user"})
     assert rec == {"recall": None, "found": [], "missed": []}
+
+
+def test_detector_one_candidate_per_new_error_and_ignores_favicon() -> None:
+    from ai_qa_agents.agents.persona_testing.agent import _detect
+    from ai_qa_agents.agents.persona_testing.models import MissionRun
+
+    personas = load_personas()
+    run = MissionRun(
+        mission=Mission(id="m", persona="power_user", user="u", goal="g"),
+        persona=personas["power_user"],
+    )
+    last = Step(1, "click", url_after="https://shop.test/checkout.html", duration_ms=100)
+    seen: set[str] = set()
+    _detect(run, run.persona, ["Failed to load resource: /favicon.ico 404"], last, seen)
+    assert run.candidates == []
+    _detect(run, run.persona, ["favicon.ico 404", "checkout failed"], last, seen)
+    _detect(run, run.persona, ["favicon.ico 404", "checkout failed", "checkout failed"], last, seen)
+    assert len(run.candidates) == 1
+    issue = run.candidates[0].issue
+    assert issue.check.expected == "checkout failed"
+    assert issue.title.startswith("Console error on /checkout.html")
+
+    slow = Step(2, "click", url_after="https://shop.test/", duration_ms=9000)
+    _detect(run, run.persona, [], slow, seen)
+    assert run.candidates[-1].issue.check.kind == "slow_step"

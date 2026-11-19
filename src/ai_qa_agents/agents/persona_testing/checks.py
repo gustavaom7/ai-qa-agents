@@ -55,6 +55,10 @@ def _evaluate(check: Check, session: Session, steps: list[Step]) -> CheckResult:
 
     if kind == "console_error":
         errors = session.console_errors()
+        if check.expected:  # a specific message must appear again
+            matching = [e for e in errors if check.expected in e]
+            detail = matching[0] if matching else f"no console error matching {check.expected!r}"
+            return CheckResult(True, bool(matching), detail[:200])
         return CheckResult(True, bool(errors), "; ".join(errors[:3]) or "no console errors")
 
     if kind == "slow_step":

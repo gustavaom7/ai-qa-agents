@@ -1,0 +1,357 @@
+"""HTML report for GitHub Pages: one self-contained page plus copied evidence.
+
+Inputs (all optional, so the page builds on a fresh clone):
+    findings/<agent>.json            reviewed record (source of truth for review status)
+    runs/<agent>/<target>/summary.json and findings.json   latest run of each agent x target
+    runs/usage.jsonl                 tokens and cost
+
+Style lives in ``style.css`` and ``theme.js`` next to this file (Terminal
+Dashboard look). The page makes no external request.
+"""
+
+from __future__ import annotations
+
+import json
+import shutil
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from html import escape
+from pathlib import Path
+from typing import Any
+
+from ai_qa_agents.core.finding import Finding, ReviewStatus, load_findings, precision
+from ai_qa_agents.core.llm.usage import UsageLog
+
+HERE = Path(__file__).parent
+CSS = (HERE / "style.css").read_text(encoding="utf-8")
+THEME_JS = (HERE / "theme.js").read_text(encoding="utf-8")
+
+REVIEW_LABEL = {
+    ReviewStatus.DRAFT: ("To review", "st-atencao"),
+    ReviewStatus.CONFIRMED: ("Confirmed bug", "st-falha"),
+    ReviewStatus.FALSE_POSITIVE: ("False positive", "st-nao-executada"),
+}
+LEGEND = [
+    ("No findings", "st-ok", "The run finished and no bug was reproduced"),
+    ("To review", "st-atencao", "Replay-confirmed findings waiting for a human review"),
+    ("Confirmed bug", "st-falha", "A human confirmed the finding is a real bug"),
+    ("False positive", "st-nao-executada", "A human rejected the finding"),
+    ("Not run", "st-nao-executada", "No run of this agent yet"),
+]
+
+
+def _e(value: object) -> str:
+    return escape(str(value), quote=True)
+
+
+@dataclass
+class RunView:
+    agent: str
+    target: str
+    path: Path
+    summary: dict[str, Any]
+    findings: list[Finding] = field(default_factory=list)
+
+    @property
+    def meta(self) -> dict[str, Any]:
+        meta: dict[str, Any] = self.summary.get("meta", {})
+        return meta
+
+    @property
+    def demo(self) -> bool:
+        return bool(self.meta.get("demo"))
+
+
+def load_runs(root: Path) -> list[RunView]:
+    runs = []
+    for summary in sorted((root / "runs").glob("*/*/summary.json")):
+        agent, target = summary.parent.parent.name, summary.parent.name
+        views = RunView(
+            agent=agent,
+            target=target,
+            path=summary.parent,
+            summary=json.loads(summary.read_text(encoding="utf-8")),
+            findings=load_findings(summary.parent / "findings.json"),
+        )
+        runs.append(views)
+    return runs
+
+
+def load_records(root: Path) -> dict[str, list[Finding]]:
+    return {p.stem: load_findings(p) for p in sorted((root / "findings").glob("*.json"))}
+
+
+def _with_review(findings: list[Finding], record: list[Finding]) -> list[Finding]:
+    """Show a run's findings with the review status from the committed record."""
+    by_fp = {f.fingerprint: f for f in record}
+    out = []
+    for f in findings:
+        old = by_fp.get(f.fingerprint)
+        out.append(
+            f
+            if old is None
+            else f.model_copy(update={"status": old.status, "review_note": old.review_note})
+        )
+    return out
+
+
+def _run_status(findings: list[Finding]) -> tuple[str, str]:
+    if any(f.status == ReviewStatus.CONFIRMED for f in findings):
+        return "Bugs confirmed", "st-falha"
+    if any(f.status == ReviewStatus.DRAFT for f in findings):
+        return "To review", "st-atencao"
+    return "No findings", "st-ok"
+
+
+def _pill(label: str, cls: str, title: str = "") -> str:
+    t = f' title="{_e(title)}"' if title else ""
+    return f'<span class="pilula {cls}"{t}>{_e(label)}</span>'
+
+
+def _when(iso: str | None) -> str:
+    if not iso:
+        return "—"
+    try:
+        dt = datetime.fromisoformat(iso)
+    except ValueError:
+        return _e(iso)
+    return f'<time datetime="{_e(iso)}" title="{_e(iso)} UTC">{dt:%Y-%m-%d %H:%M} UTC</time>'
+
+
+def _pct(value: float | None) -> str:
+    return "—" if value is None else f"{value * 100:.0f}%"
+
+
+# -- evidence ---------------------------------------------------------------
+
+
+def _copy_evidence(findings: list[Finding], root: Path, out: Path) -> None:
+    for f in findings:
+        for ev in f.evidence:
+            src = root / ev.path
+            if src.exists() and src.is_file():
+                dest = out / ev.path
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src, dest)
+
+
+def _evidence_html(f: Finding, out: Path) -> str:
+    parts = []
+    for ev in f.evidence:
+        if not (out / ev.path).exists():
+            continue
+        href = _e(ev.path)
+        if ev.kind == "screenshot":
+            parts.append(
+                f'<a href="{href}"><img src="{href}" loading="lazy" '
+                f'alt="Screenshot when the check confirmed: {_e(f.title)}"></a>'
+            )
+        elif ev.kind == "video":
+            parts.append(f'<video src="{href}" controls preload="none" width="480"></video>')
+        elif ev.kind == "trace":
+            parts.append(
+                f'<p class="meta"><a class="btn" href="{href}" download>Playwright trace</a><br>'
+                f"open with <code>uv run playwright show-trace trace.zip</code></p>"
+            )
+    if not parts:
+        return '<p class="meta">Evidence not kept (only the latest run is published).</p>'
+    return f'<div class="evid">{"".join(parts)}</div>'
+
+
+def _finding_rows(findings: list[Finding], out: Path) -> str:
+    rows = []
+    for f in findings:
+        label, cls = REVIEW_LABEL[f.status]
+        steps = "".join(f"<li>{_e(s)}</li>" for s in f.steps)
+        note = f"<p><strong>Review note:</strong> {_e(f.review_note)}</p>" if f.review_note else ""
+        rows.append(
+            f"""<tr>
+<td>{_pill(label, cls)}</td>
+<td class="mono">{_e(f.severity.value)}</td>
+<td><strong>{_e(f.title)}</strong>
+  <details><summary>Steps, expected vs. actual, evidence</summary><div class="detalhe">
+  <ol>{steps}</ol>
+  <p><strong>Expected:</strong> {_e(f.expected or "—")}<br>
+     <strong>Actual:</strong> {_e(f.actual or "—")}</p>{note}
+  {_evidence_html(f, out)}
+  <p class="meta">fingerprint <code>{_e(f.fingerprint)}</code> · location {_e(f.location)}</p>
+  </div></details></td>
+<td class="mono">{_e(f.tags.get("mission", ""))}<br>{_e(f.tags.get("persona", ""))}</td>
+<td class="mono">{_e(f.tags.get("user", ""))}</td>
+<td class="mono">{_e(f.tags.get("check_kind", ""))}</td>
+</tr>"""
+        )
+    if not rows:
+        return '<p class="meta">No replay-confirmed findings in this run.</p>'
+    return f"""<div class="tabela"><table>
+<thead><tr><th>Review</th><th>Severity</th><th>Finding</th><th>Mission / persona</th>
+<th>Test user</th><th>Check</th></tr></thead><tbody>{"".join(rows)}</tbody></table></div>"""
+
+
+def _missions_table(summary: dict[str, Any]) -> str:
+    rows = "".join(
+        f"<tr><td class='mono'>{_e(m['id'])}</td><td class='mono'>{_e(m['persona'])}</td>"
+        f"<td class='mono'>{_e(m['user'])}</td><td class='n'>{_e(m['steps'])}</td>"
+        f"<td class='mono'>{_e(m['ended'])}</td><td class='n'>{_e(m['candidates'])}</td></tr>"
+        for m in summary.get("missions", [])
+    )
+    return f"""<div class="tabela"><table>
+<thead><tr><th>Mission</th><th>Persona</th><th>Test user</th><th class="n">Steps</th>
+<th>Ended</th><th class="n">Suspected</th></tr></thead><tbody>{rows}</tbody></table></div>"""
+
+
+def _unconfirmed(summary: dict[str, Any]) -> str:
+    items = summary.get("unconfirmed", [])
+    if not items:
+        return ""
+    lis = "".join(
+        f"<li><strong>{_e(u['title'])}</strong> <span class='meta'>({_e(u['source'])}, "
+        f"{_e(u['mission'])})</span> — {_e(u['detail'])}</li>"
+        for u in items
+    )
+    return (
+        f"<details><summary>{len(items)} suspected issue(s) not confirmed by the replay "
+        f"(kept out of the findings)</summary><div class='detalhe'><ul>{lis}</ul></div></details>"
+    )
+
+
+def _run_card(run: RunView, record: list[Finding], out: Path) -> str:
+    findings = _with_review(run.findings, record)
+    label, cls = _run_status(findings)
+    rec = run.summary.get("recall", {})
+    demo = (
+        '<span class="selo" title="Local fixture app driven by a scripted model, '
+        'to show the pipeline end to end. Not counted in the totals.">'
+        "Demo · local fixture, scripted model</span>"
+        if run.demo
+        else ""
+    )
+    found = ", ".join(rec.get("found", [])) or "none"
+    missed = ", ".join(rec.get("missed", [])) or "none"
+    providers = " → ".join(run.meta.get("providers", [])) or "—"
+    return f"""<article class="cartao" aria-labelledby="run-{_e(run.agent)}-{_e(run.target)}">
+<header><h2 id="run-{_e(run.agent)}-{_e(run.target)}">{_e(run.agent)} · {_e(run.target)}</h2>
+{_pill(label, cls)} {demo}</header>
+<p class="meta">Run of {_when(run.meta.get("finished_at"))} · LLM chain {_e(providers)}</p>
+<div class="kpis">
+  <div class="kpi"><div class="k">Findings</div><div class="v">{len(findings)}</div>
+    <div class="d">reproduced by replay</div></div>
+  <div class="kpi taxa"><div class="k">Recall</div><div class="v">{_pct(rec.get("recall"))}</div>
+    <div class="d">of known bugs in scope</div></div>
+  <div class="kpi"><div class="k">Not confirmed</div>
+    <div class="v">{len(run.summary.get("unconfirmed", []))}</div>
+    <div class="d">dropped by the replay</div></div>
+</div>
+<p class="meta">Known bugs found: {_e(found)} · missed: {_e(missed)}</p>
+<h3>Findings</h3>{_finding_rows(findings, out)}
+{_unconfirmed(run.summary)}
+<h3>Missions</h3>{_missions_table(run.summary)}
+</article>"""
+
+
+def _record_card(agent: str, record: list[Finding], out: Path) -> str:
+    return f"""<article class="cartao" aria-labelledby="rec-{_e(agent)}">
+<header><h2 id="rec-{_e(agent)}">{_e(agent)} · all reviewed findings</h2></header>
+<p class="meta">From <code>findings/{_e(agent)}.json</code>: every finding any run reproduced,
+with its review status. Precision = confirmed ÷ reviewed.</p>
+{_finding_rows(record, out)}</article>"""
+
+
+# -- page -------------------------------------------------------------------
+
+
+def render(root: Path, out: Path, generated_at: datetime | None = None) -> str:
+    generated_at = generated_at or datetime.now(UTC)
+    runs = load_runs(root)
+    records = load_records(root)
+    real_runs = [r for r in runs if not r.demo]
+    all_record = [f for fs in records.values() for f in fs]
+    for r in runs:
+        _copy_evidence(r.findings, root, out)
+
+    confirmed = sum(f.status == ReviewStatus.CONFIRMED for f in all_record)
+    false_pos = sum(f.status == ReviewStatus.FALSE_POSITIVE for f in all_record)
+    to_review = sum(f.status == ReviewStatus.DRAFT for f in all_record)
+    recalls = [r.summary.get("recall", {}).get("recall") for r in real_runs]
+    recalls = [x for x in recalls if x is not None]
+    usage = UsageLog(root / "runs" / "usage.jsonl").summary()
+    real_agents = {r.agent for r in real_runs} | set(records)
+    live_calls = sum(v["live_calls"] for k, v in usage.items() if k in real_agents)
+    cost = sum(v["cost_usd"] for k, v in usage.items() if k in real_agents)
+    untracked = sum(v["untracked"] for k, v in usage.items() if k in real_agents)
+
+    notice = ""
+    if not real_runs and not all_record:
+        notice = (
+            '<div class="aviso" role="status"><strong>No live run yet.</strong> '
+            "The numbers below fill in after the first nightly run with free-tier LLM keys. "
+            "The demo run further down shows the whole pipeline on a local fixture app.</div>"
+        )
+
+    kpis = f"""<div class="kpis" aria-label="Totals from live runs">
+<div class="kpi"><div class="k">Findings</div><div class="v">{len(all_record)}</div>
+  <div class="d">in the reviewed record</div></div>
+<div class="kpi"><div class="k">To review</div><div class="v">{to_review}</div>
+  <div class="d">waiting for a human</div></div>
+<div class="kpi"><div class="k">Confirmed bugs</div><div class="v">{confirmed}</div>
+  <div class="d">{false_pos} false positive(s)</div></div>
+<div class="kpi taxa"><div class="k">Precision</div><div class="v">{_pct(precision(all_record))}</div>
+  <div class="d">confirmed ÷ reviewed</div></div>
+<div class="kpi taxa"><div class="k">Recall</div>
+  <div class="v">{_pct(sum(recalls) / len(recalls) if recalls else None)}</div>
+  <div class="d">mean over latest runs</div></div>
+<div class="kpi"><div class="k">LLM cost</div><div class="v">${cost:.4f}</div>
+  <div class="d">{live_calls} live call(s){f", {untracked} untracked" if untracked else ""}</div></div>
+</div>"""
+
+    legend = "".join(_pill(label, cls, title) for label, cls, title in LEGEND)
+    run_cards = (
+        "".join(
+            _run_card(r, records.get(r.agent, []), out)
+            for r in sorted(runs, key=lambda r: (r.demo, r.agent, r.target))
+        )
+        or '<p class="meta">No runs yet.</p>'
+    )
+    record_cards = "".join(_record_card(agent, fs, out) for agent, fs in records.items() if fs)
+
+    title = (
+        f"{to_review} to review · {confirmed} confirmed — ai-qa-agents report"
+        if all_record
+        else "No live run yet — ai-qa-agents report"
+    )
+    return f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{_e(title)}</title>
+<meta property="og:title" content="{_e(title)}">
+<meta property="og:description" content="Autonomous QA agents on public demo apps; findings confirmed by replay and reviewed by a human.">
+<script>{THEME_JS}</script>
+<style id="estilo-relatorio">{CSS}</style></head>
+<body>
+<div class="barra"><span class="marca">ai-qa-agents</span>
+<button class="btn" id="tema" type="button" aria-pressed="false">◐ Theme</button></div>
+<main>
+<h1>QA agents report</h1>
+<p class="meta">Report generated {_when(generated_at.isoformat(timespec="seconds"))}</p>
+<p class="lead">Agents explore public demo apps on their own. A suspected bug is listed only after a
+scripted replay in a fresh browser shows it again, checked by code, not by the model. Every
+finding stays <em>To review</em> until a human confirms or rejects it.</p>
+{notice}
+{kpis}
+<div class="legenda" aria-label="Status legend">{legend}</div>
+<h3>Latest runs</h3>
+{run_cards}
+{f"<h3>Reviewed record</h3>{record_cards}" if record_cards else ""}
+</main>
+<footer>Built by <code>uv run agent report</code>. Review a finding with
+<code>uv run agent review &lt;agent&gt; &lt;fingerprint&gt; confirmed|false_positive --note "..."</code>.</footer>
+</body></html>
+"""
+
+
+def build_site(root: Path, out: Path, generated_at: datetime | None = None) -> Path:
+    out.mkdir(parents=True, exist_ok=True)
+    index = out / "index.html"
+    index.write_text(render(root, out, generated_at), encoding="utf-8")
+    (out / ".nojekyll").write_text("", encoding="utf-8")
+    return index

@@ -8,12 +8,14 @@ from .finding import (
     precision,
     save_findings,
 )
+from .review import MergeResult, merge, set_status
 from .targets import KnownBug, Target, TargetKind, load_targets
 
 __all__ = [
     "Evidence",
     "Finding",
     "KnownBug",
+    "MergeResult",
     "ReviewStatus",
     "Severity",
     "Target",
@@ -21,6 +23,8 @@ __all__ = [
     "dedupe",
     "load_findings",
     "load_targets",
+    "merge",
     "precision",
     "save_findings",
+    "set_status",
 ]

@@ -6,7 +6,7 @@ Autonomous QA agents that run every night against public demo apps and report fi
 
 Everything runs at **$0**: LLMs on free tiers or local, Android emulators on GitHub Actions.
 
-> **Status: delivery 2 of 9.** The core and the first agent, `persona_testing`, are in place and verified end to end on a local shop with planted bugs. The first live saucedemo run is next. See the [roadmap](#roadmap) and [persona_testing findings](findings/persona_testing.md).
+> **Status: delivery 3 of 9.** The core, the first agent (`persona_testing`) and the nightly report are in place. Everything is verified end to end on a local shop with planted bugs; the first live saucedemo run is next. See the [roadmap](#roadmap), the [report](https://gustavaom7.github.io/ai-qa-agents/) and [persona_testing findings](findings/persona_testing.md).
 
 ## Agents
 
@@ -67,6 +67,23 @@ Override the chain with `LLM_PROVIDERS=groq,ollama`, or force one provider with 
 
 Every agent emits the same `Finding` (`core/finding.py`): severity, steps, expected vs. actual, evidence (screenshot, video, trace, diff), a `reproduced` flag set by a deterministic replay (never by the model) and a review status. Findings start as `draft`; a human marks them `confirmed` or `false_positive`, and that history gives each agent's precision. A fingerprint (agent + target + location + normalized title) removes duplicates across nights.
 
+## Nightly report and review
+
+The **Nightly agents** workflow runs every night (and on demand):
+
+1. **agents** runs `persona_testing` on saucedemo with free-tier LLMs (skipped until the keys exist), merges the run into `findings/persona_testing.json` and opens a **review PR** with the new findings and recorded answers.
+2. **demo** runs the same agent on the local bug shop with a scripted model, so the report always shows the pipeline working. Demo runs are labelled and never enter the record.
+3. **report** builds a self-contained HTML page (`uv run agent report`) and publishes it to GitHub Pages: totals, precision, recall, LLM cost, every finding with steps, expected vs. actual, screenshot, video and Playwright trace.
+
+Reviewing is a PR: check each finding's evidence, then
+
+```bash
+uv run agent review persona_testing <fingerprint> confirmed --note "reproduced by hand"
+uv run agent review persona_testing <fingerprint> false_positive --note "stale data, not a bug"
+```
+
+and merge. A merged review republishes the report. A finding seen again later keeps its review.
+
 ## Repository layout
 
 ```
@@ -74,10 +91,13 @@ src/ai_qa_agents/
 ├── core/
 │   ├── llm/          # client, providers, cassettes, usage log
 │   ├── finding.py    # finding schema, dedupe, precision
+│   ├── review.py     # merge runs into the reviewed record
+│   ├── report/       # HTML report (Terminal Dashboard style, no external requests)
 │   └── targets.py    # target schema and loader
 ├── agents/
 │   └── persona_testing/  # personas, missions, driver, checks, replay
-└── cli.py            # `uv run agent ...`
+└── cli.py            # `uv run agent list|doctor|ping|run|collect|review|report`
+scripts/demo_bugshop.py  # demo run on the local bug shop, no keys needed
 targets/              # public demo apps, one YAML each
 cassettes/            # recorded LLM answers, committed
 findings/             # reviewed findings per agent, committed
@@ -90,7 +110,7 @@ tests/                # offline pytest suite; fixtures/bugshop is a local shop w
 |---|---|---|
 | 1 | Core and green CI ✅ | CI passes; the client falls back Gemini → Groq → Ollama; cassette replay works in tests |
 | 2 | **Persona testing** ✅ code, live run pending | Finds 3+ known bugs of `problem_user` / `error_user`, each replay-confirmed with video |
-| 3 | HTML report on GitHub Pages | Nightly publishes the page with the persona findings |
+| 3 | **HTML report on GitHub Pages** ✅ code, Pages switch pending | Nightly publishes the page with the persona findings |
 | 4 | Worst-case data | Every break has a screenshot and the data that caused it |
 | 5 | Copy drift | Inconsistent-term table for both web targets |
 | 6 | Design tokens | `visual_user` flagged as off-system |
