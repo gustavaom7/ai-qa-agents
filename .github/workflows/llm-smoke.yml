@@ -1,0 +1,33 @@
+name: LLM smoke
+
+# Manual check that the free-tier keys in repo secrets work end to end:
+# one tiny live call through the fallback chain.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      LLM_PROVIDERS: gemini,groq
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - run: uv sync --locked
+
+      - name: Providers ready
+        run: uv run agent doctor
+
+      - name: One live call
+        run: uv run agent ping

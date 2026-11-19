@@ -1,0 +1,30 @@
+name: saucedemo
+kind: web
+base_url: https://www.saucedemo.com
+description: Sauce Labs demo store. Public test users with deliberate bugs; password is public.
+credentials:
+  standard_user: secret_sauce
+  problem_user: secret_sauce
+  error_user: secret_sauce
+  performance_glitch_user: secret_sauce
+  visual_user: secret_sauce
+# Answer key for the persona and design-token agents: recall is measured against these.
+known_bugs:
+  - id: problem-user-images
+    description: Every product shows the same wrong image.
+    trigger: login as problem_user
+  - id: problem-user-sort
+    description: Sorting the product list has no effect.
+    trigger: login as problem_user
+  - id: problem-user-last-name
+    description: The last name field on checkout step one does not keep what is typed.
+    trigger: login as problem_user, checkout
+  - id: error-user-checkout
+    description: Checkout cannot be completed; errors appear in the flow.
+    trigger: login as error_user, checkout
+  - id: performance-glitch-login
+    description: Login takes several seconds longer than for standard_user.
+    trigger: login as performance_glitch_user
+  - id: visual-user-layout
+    description: Layout and styling differ from standard_user (misaligned elements).
+    trigger: login as visual_user

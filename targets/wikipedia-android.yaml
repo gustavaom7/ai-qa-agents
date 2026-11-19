@@ -1,0 +1,4 @@
+name: wikipedia-android
+kind: android
+app_id: org.wikipedia
+description: Wikipedia Android app (open source). Device-sweep and store-review target.

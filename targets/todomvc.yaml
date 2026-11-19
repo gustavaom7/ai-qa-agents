@@ -1,0 +1,4 @@
+name: todomvc
+kind: web
+base_url: https://demo.playwright.dev/todomvc
+description: Playwright's TodoMVC demo. Free-text input and lists of any size, the worst-case data target.
