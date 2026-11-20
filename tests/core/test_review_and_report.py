@@ -215,3 +215,70 @@ def test_cli_review_and_report(
     assert main(["review", "persona_testing", "nope", "confirmed"]) == 2
     assert main(["report", "--out", "out"]) == 0
     assert (repo / "out" / "index.html").exists()
+
+
+# -- history and fonts -------------------------------------------------------------
+
+
+def test_history_accumulates_without_duplicates(repo: Path) -> None:
+    site = repo / "site"
+    build_site(repo, site)
+    first = json.loads((site / "history.json").read_text())
+    assert {(e["target"], e["demo"]) for e in first} == {
+        ("saucedemo", False),
+        ("bugshop-demo", True),
+    }
+    old = {
+        "agent": "persona_testing", "target": "saucedemo",
+        "finished_at": "2026-11-01T06:30:00+00:00",
+        "findings": 1, "status": "No findings", "status_class": "st-ok",
+    }  # fmt: skip
+    previous = repo / "previous.json"
+    previous.write_text(json.dumps([old, *first]))
+    html = build_site(repo, site, history_path=previous).read_text()
+    again = json.loads((site / "history.json").read_text())
+    assert len(again) == 3, "same runs again are not duplicated"
+    assert again[-1]["finished_at"] == old["finished_at"], "newest first"
+    assert "Run history" in html
+    assert 'class="quadro st-ok"' in html
+
+
+def test_history_ignores_a_broken_previous_file(repo: Path) -> None:
+    previous = repo / "previous.json"
+    previous.write_text("<html>404</html>")
+    build_site(repo, repo / "site", history_path=previous)
+    assert len(json.loads((repo / "site" / "history.json").read_text())) == 2
+
+
+def test_fonts_are_embedded_and_load_offline(repo: Path, browser: object) -> None:
+    from playwright.sync_api import Browser
+
+    assert isinstance(browser, Browser)
+    index = build_site(repo, repo / "site")
+    html = index.read_text()
+    assert "fonts.googleapis" not in html and not re.search(r"url\(['\"]?https?:", html)
+    context = browser.new_context()
+    external: list[str] = []
+
+    def block(route: object) -> None:
+        from playwright.sync_api import Route
+
+        assert isinstance(route, Route)
+        if route.request.url.startswith(("file:", "data:")):
+            route.continue_()
+        else:
+            external.append(route.request.url)
+            route.abort()
+
+    context.route("**/*", block)
+    page = context.new_page()
+    page.goto(index.as_uri())
+    page.evaluate("document.fonts.ready")
+    assert page.evaluate("document.fonts.check('13px \"IBM Plex Mono\"')")
+    assert page.evaluate("document.fonts.check('600 14px Inter')")
+    used = page.evaluate(
+        "[...document.fonts].filter(f => f.status === 'loaded').map(f => f.family)"
+    )
+    assert {"IBM Plex Mono", "Inter"} <= set(used)
+    assert external == []
+    context.close()

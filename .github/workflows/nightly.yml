@@ -52,10 +52,10 @@ jobs:
             echo "ready=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: steps.keys.outputs.ready == 'true'
 
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v7
         if: steps.keys.outputs.ready == 'true'
         with:
           python-version: "3.12"
@@ -78,7 +78,7 @@ jobs:
           cat review.md >> "$GITHUB_STEP_SUMMARY"
           cat runs/persona_testing/saucedemo/summary.md >> "$GITHUB_STEP_SUMMARY"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always() && steps.keys.outputs.ready == 'true'
         with:
           name: agents-run
@@ -90,7 +90,7 @@ jobs:
 
       - name: Open the review PR
         if: steps.keys.outputs.ready == 'true'
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v8
         with:
           branch: nightly/review
           delete-branch: true
@@ -105,9 +105,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v7
         with:
           python-version: "3.12"
           enable-cache: true
@@ -120,7 +120,7 @@ jobs:
       - name: Demo run on the local bug shop
         run: uv run python scripts/demo_bugshop.py
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: demo-run
           path: |
@@ -141,42 +141,48 @@ jobs:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v7
         with:
           python-version: "3.12"
           enable-cache: true
 
       - run: uv sync --locked
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         continue-on-error: true
         with:
           name: demo-run
           path: .
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         if: needs.agents.outputs.ran == 'true'
         continue-on-error: true
         with:
           name: agents-run
           path: .
 
+      - name: Fetch the published run history
+        # The page itself is the store: last build's history.json, plus this run.
+        run: |
+          curl -fsSL "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/history.json" \
+            -o history.json || echo "[]" > history.json
+
       - name: Build the report
         run: |
           if [ "${{ needs.agents.outputs.ran }}" = "true" ]; then
             uv run agent collect persona_testing  # show new findings before the PR is merged
           fi
-          uv run agent report --out site
+          uv run agent report --out site --history history.json
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: report
           path: site/
           retention-days: 14
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: site/
 
@@ -184,7 +190,7 @@ jobs:
         id: deploy
         # Fails until Pages is enabled with source "GitHub Actions" (Settings -> Pages).
         continue-on-error: true
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
 
       - name: Pages not enabled
         if: steps.deploy.outcome == 'failure'

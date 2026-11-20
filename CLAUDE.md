@@ -23,6 +23,6 @@ Browser tests need Chromium: `uv run playwright install chromium ffmpeg`, or `PW
 - **Free by default.** The default chain is gemini → groq → ollama. Do not make a paid provider the default.
 - **Cassettes are committed.** A new agent ships with recorded answers so its tests run offline. Re-record with `LLM_MODE=record` and review the diff.
 - **Tests are offline.** Use `httpx.MockTransport` or a fake `Provider`; no test may need a key or the network.
-- **Report style** lives only in `core/report/style.css` and `theme.js`; no CSS in Python strings, no external URLs (fonts, scripts, images). Status always has a text label, not just a colour.
+- **Report style** lives only in `core/report/style.css`, `theme.js` and the generated `fonts.css` (regenerate with `scripts/vendor_fonts.py`, never edit by hand); no CSS in Python strings, no external URLs (fonts, scripts, images). Status always has a text label, not just a colour.
 - **Demo runs** (`meta.demo`) are never merged into `findings/`.
 - New agent = package under `src/ai_qa_agents/agents/<name>/`, registered with `@register("<name>")`, a `findings/<name>.md`, and tests.

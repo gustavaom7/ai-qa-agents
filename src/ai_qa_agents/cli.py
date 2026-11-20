@@ -144,7 +144,8 @@ def cmd_review(args: argparse.Namespace) -> int:
 
 
 def cmd_report(args: argparse.Namespace) -> int:
-    index = build_site(_root(), Path(args.out))
+    history = Path(args.history) if args.history else None
+    index = build_site(_root(), Path(args.out), history_path=history)
     print(f"report -> {index}")
     return 0
 
@@ -171,6 +172,7 @@ def main(argv: list[str] | None = None) -> int:
     review.set_defaults(fn=cmd_review)
     report = sub.add_parser("report")
     report.add_argument("--out", default="site")
+    report.add_argument("--history", help="history.json of the previously published report")
     report.set_defaults(fn=cmd_report)
     args = parser.parse_args(argv)
     code: int = args.fn(args)

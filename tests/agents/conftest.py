@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import functools
 import json
-import os
 import re
 import threading
 from collections.abc import Iterator
@@ -13,7 +12,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from playwright.sync_api import Browser, sync_playwright
 
 from ai_qa_agents.core.llm import LLMClient, LLMRequest, Provider
 
@@ -61,21 +59,6 @@ def ref_for(prompt: str, label: str) -> str:
 def scripted_client(script: list[dict[str, Any]]) -> tuple[LLMClient, ScriptedProvider]:
     provider = ScriptedProvider(script)
     return LLMClient([provider], mode="live"), provider
-
-
-@pytest.fixture(scope="session")
-def browser() -> Iterator[Browser]:
-    """Real Chromium on local fixture pages (no network). Skips if no browser is installed.
-
-    CI installs Chromium; locally ``PW_CHANNEL=chrome`` uses an installed Chrome.
-    """
-    with sync_playwright() as pw:
-        try:
-            b = pw.chromium.launch(channel=os.getenv("PW_CHANNEL") or None)
-        except Exception as exc:  # pragma: no cover - depends on the machine
-            pytest.skip(f"no browser available: {str(exc).splitlines()[0]}")
-        yield b
-        b.close()
 
 
 class _QuietHandler(SimpleHTTPRequestHandler):

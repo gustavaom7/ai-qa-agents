@@ -125,6 +125,12 @@ details[open] > summary { border-bottom: 1px solid var(--border-dim); }
 .evid img { max-width: 360px; border: 1px solid var(--border-dim); }
 .evid video { max-width: 480px; border: 1px solid var(--border-dim); }
 
+.tendencias { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 6px; }
+.tendencias li { display: flex; align-items: center; gap: 12px; font-size: 12px; }
+.tendencia { display: inline-flex; gap: 3px; }
+.quadro { width: 12px; height: 12px; background: var(--c, var(--neutral)); display: inline-block; }
+td.taxa { color: var(--taxa); }
+
 .legenda { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 24px; }
 footer { color: var(--mut-2); font-size: 12px; border-top: 1px solid var(--border-dim); padding: 16px 24px; }
 
